@@ -10,9 +10,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # 增加超时时间
     
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
     
     - name: Set up Python
       uses: actions/setup-python@v4
@@ -52,7 +54,7 @@ jobs:
     
     - name: Install Python dependencies
       run: |
-        pip install --upgrade pip
+        python -m pip install --upgrade pip
         pip install --upgrade setuptools wheel
         pip install buildozer
         pip install cython==0.29.33
@@ -61,7 +63,7 @@ jobs:
         pip install pillow
     
     - name: Cache Buildozer
-      uses: actions/cache@v4
+      uses: actions/cache@v3
       with:
         path: |
           ~/.buildozer
@@ -71,48 +73,58 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-buildozer-
     
+    - name: Generate buildozer.spec if missing
+      run: |
+        if [ ! -f buildozer.spec ]; then
+          buildozer init
+          echo "Created buildozer.spec"
+        else
+          echo "buildozer.spec already exists"
+        fi
+    
     - name: Build APK
       run: |
         export PATH=$PATH:~/.local/bin/
-        yes | buildozer android debug
+        # 使用--verbose获取详细日志
+        buildozer android debug --verbose
       env:
-        ANDROID_HOME: ${{ github.workspace }}/.buildozer/android/platform/android-sdk
-        ANDROID_SDK_ROOT: ${{ github.workspace }}/.buildozer/android/platform/android-sdk
+        ANDROID_HOME: /usr/lib/android-sdk
+        ANDROID_SDK_ROOT: /usr/lib/android-sdk
     
-    - name: Upload APK
+    - name: Find and upload APK
+      run: |
+        # 查找所有APK文件
+        find bin -name '*.apk' -exec echo "Found APK: {}" \;
+        
+        # 重命名APK文件为固定名称
+        for apk in bin/*.apk; do
+          new_name="SearchLikeBot-${{ github.run_number }}.apk"
+          cp "$apk" "$new_name"
+          echo "Renamed $apk to $new_name"
+        done
+      id: find_apk
+    
+    - name: Upload APK artifact
       uses: actions/upload-artifact@v4
       with:
         name: SearchLikeBot-APK
-        path: bin/*.apk
+        path: SearchLikeBot-*.apk
     
     - name: Create Release
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      uses: actions/create-release@v1
-      id: create_release
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+      uses: softprops/action-gh-release@v1
       with:
         tag_name: v${{ github.run_number }}
-        release_name: Release v${{ github.run_number }}
+        name: Release v${{ github.run_number }}
         body: |
           自动构建版本 v${{ github.run_number }}
           
-          ## 更新内容
-          - 自动构建的APK文件
+          ## 构建信息
           - 提交SHA: ${{ github.sha }}
+          - 触发分支: ${{ github.ref }}
           
-          ## 下载
-          请下载下方的APK文件进行安装
+          ## 安装说明
+          下载附件APK文件并安装
         draft: false
         prerelease: false
-    
-    - name: Upload Release APK
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./bin/searchlikebot-0.1-arm64-v8a-debug.apk
-        asset_name: SearchLikeBot-v${{ github.run_number }}.apk
-        asset_content_type: application/vnd.android.package-archive
+        files: SearchLikeBot-*.apk
