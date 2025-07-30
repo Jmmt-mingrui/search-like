@@ -61,7 +61,7 @@ jobs:
         pip install pillow
     
     - name: Cache Buildozer
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/.buildozer
@@ -80,7 +80,7 @@ jobs:
         ANDROID_SDK_ROOT: ${{ github.workspace }}/.buildozer/android/platform/android-sdk
     
     - name: Upload APK
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: SearchLikeBot-APK
         path: bin/*.apk
